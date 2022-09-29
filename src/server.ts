@@ -1,15 +1,16 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, User } from "@prisma/client";
 import cors from "cors";
 import express from "express";
 import bcrypt from "bcryptjs";
-import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv'
-const socket = require("socket.io");
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+import { Server } from "socket.io";
+// const socket = require("socket.io");
 
-dotenv.config()
+dotenv.config();
 
 const app = express();
-const SECRET= process.env.SECRET!
+const SECRET = process.env.SECRET!;
 
 app.use(cors());
 app.use(express.json());
@@ -17,22 +18,36 @@ app.use(express.json());
 const port = 4001;
 const prisma = new PrismaClient({ log: ["error", "info", "query", "warn"] });
 
-
-
-function getToken (id: number) {
+function getToken(id: number) {
   return jwt.sign({ id: id }, SECRET, {
-    expiresIn: '2 minutes'
-  })
+    expiresIn: "7 days",
+  });
 }
 // {select:{friend1Id:true,friend2Id:true}
-async function getCurrentUser (token: string) {
-  const decodedData = jwt.verify(token, SECRET)
+async function getCurrentUser(token: string) {
+  const decodedData = jwt.verify(token, SECRET);
   const user = await prisma.user.findUnique({
     // @ts-ignore
     where: { id: decodedData.id },
-    include: { following:{select:{friend2:{select:{name:true,surname:true,image:true}}}} }
-  })
-  return user
+    include: {
+      following: {
+        select: {
+          friend2: { select: { name: true, surname: true, image: true } },
+        },
+      },
+      followedby: {
+        select: {
+          friend1: { select: { name: true, surname: true, image: true } },
+        },
+      },
+    },
+  });
+  if(!user) return null
+  let friends = [
+    ...user.following.map((following) => following.friend2),
+    ...user.followedby.map((followedby) => followedby.friend1),
+  ];
+  return {...user,friends};
 }
 app.post("/sign-up", async (req, res) => {
   try {
@@ -49,9 +64,9 @@ app.post("/sign-up", async (req, res) => {
           email: req.body.email,
           password: bcrypt.hashSync(req.body.password),
         },
-        include:{followedby:true,following:true}
+        include: { followedby: true, following: true },
       });
-      res.send({user:newUser, token:getToken(newUser.id)});
+      res.send({ user: newUser, token: getToken(newUser.id) });
     }
   } catch (error) {
     //@ts-ignore
@@ -62,51 +77,67 @@ app.post("/sign-up", async (req, res) => {
 app.post("/sign-in", async (req, res) => {
   const findUser = await prisma.user.findUnique({
     where: { email: req.body.email },
-    include: { following:{select:{friend2:{select:{name:true,surname:true,image:true}}}} }
+    include: {
+      following: {
+        select: {
+          friend2: { select: { name: true, surname: true, image: true } },
+        },
+      },
+      followedby: {
+        select: {
+          friend1: { select: { name: true, surname: true, image: true } },
+        },
+      },
+    },
   });
-  if(findUser&& bcrypt.compareSync(req.body.password,findUser.password)){
-    res.send({user:findUser, token:getToken(findUser.id)})
-  } else{
-    res.status(400).send({error:"Email or password is incorrect"})
+  if (findUser && bcrypt.compareSync(req.body.password, findUser.password)) {
+    let friends = [
+      ...findUser.following.map((following) => following.friend2),
+      ...findUser.followedby.map((followedby) => followedby.friend1),
+    ];
+
+    res.send({ user: {...findUser,friends}, token: getToken(findUser.id) });
+  } else {
+    res.status(400).send({ error: "Email or password is incorrect" });
   }
 });
 
-app.get('/validate', async (req, res) => {
+app.get("/validate", async (req, res) => {
   try {
     if (req.headers.authorization) {
-      const user = await getCurrentUser(req.headers.authorization)
+      const user = await getCurrentUser(req.headers.authorization);
       // @ts-ignore
-      res.send({ user, token: getToken(user.id) })
+      res.send({ user, token: getToken(user.id) });
     }
   } catch (error) {
     // @ts-ignore
-    res.status(400).send({ error: error.message })
+    res.status(400).send({ error: error.message });
   }
-})
+});
 
-
-const server=app.listen(port, () => {
+app.listen(port, () => {
   console.log(`Serveri is running on: http://localhost:${port}`);
 });
 
+const io = new Server(4555, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
 
-const io=socket(server);
+const messages: Message[] = [];
 
-//initializing the socket io connection 
-io.on("connection", (socket:any) => {
+type Message={
+ content:string,
+ user:User & {friends: User[]}
+}
+//initializing the socket io connection
+io.on("connection", (socket) => {
   //for a new user joining the chat
-  socket.on("joinChat", async (friendEmail:string,useremail:string) => {
-  //user sending a message
-  const friend= await prisma.user.findUnique({where:{email:friendEmail}})
-  const user =await prisma.user.findUnique({where:{email:useremail}})
-  socket.on("chat", (text:any) => {
-    //gets the room user and the message sent
-    io.to(user).emit("message", {
-      userId: user?.id,
-      username: user?.email,
-      text: text,
-    });
-  })
-})
-})
-
+  socket.emit("message",messages)
+  socket.on("message", (message: Message) => {
+    messages.push(message);
+    socket.broadcast.emit("message", messages);
+  });
+});
