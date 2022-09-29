@@ -16,7 +16,7 @@ model User {
   surname    String
   email      String       @unique
   password   String
-  image      String
+  image      String?
   following  Friendship[] @relation("friend1")
   followedby Friendship[] @relation("friend2")
   messages   Message[]
