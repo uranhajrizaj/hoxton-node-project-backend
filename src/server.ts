@@ -32,22 +32,26 @@ async function getCurrentUser(token: string) {
     include: {
       following: {
         select: {
-          friend2: { select: { name: true, surname: true, image: true,id:true } },
+          friend2: {
+            select: { name: true, surname: true, image: true, id: true },
+          },
         },
       },
       followedby: {
         select: {
-          friend1: { select: { name: true, surname: true, image: true,id:true } },
+          friend1: {
+            select: { name: true, surname: true, image: true, id: true },
+          },
         },
       },
     },
   });
-  if(!user) return null
+  if (!user) return null;
   let friends = [
     ...user.following.map((following) => following.friend2),
     ...user.followedby.map((followedby) => followedby.friend1),
   ];
-  return {...user,friends};
+  return { ...user, friends };
 }
 app.post("/sign-up", async (req, res) => {
   try {
@@ -80,16 +84,18 @@ app.post("/sign-in", async (req, res) => {
     include: {
       following: {
         select: {
-          friend2: { select: { name: true, surname: true, image: true,id:true } },
+          friend2: {
+            select: { name: true, surname: true, image: true, id: true },
+          },
         },
       },
       followedby: {
         select: {
-          friend1: { select: { name: true, surname: true, image: true,id:true } },
-        }, 
+          friend1: {
+            select: { name: true, surname: true, image: true, id: true },
+          },
+        },
       },
-    
-
     },
   });
   if (findUser && bcrypt.compareSync(req.body.password, findUser.password)) {
@@ -98,26 +104,23 @@ app.post("/sign-in", async (req, res) => {
       ...findUser.followedby.map((followedby) => followedby.friend1),
     ];
 
-    res.send({ user: {...findUser,friends}, token: getToken(findUser.id) });
+    res.send({ user: { ...findUser, friends }, token: getToken(findUser.id) });
   } else {
     res.status(400).send({ error: "Email or password is incorrect" });
   }
 });
 
+app.post("/friendship", async (req, res) => {
+  const friend1Id = Number(req.body.friend1Id);
+  const friend2Id = Number(req.body.friend2Id);
+  const relation = await prisma.friendship.findUnique({
+    where: { friend1Id_friend2Id: { friend1Id, friend2Id } },
+    include: { friend1: true, friend2: true },
+  });
+  if (relation) res.send(relation);
+  else res.send({});
+});
 
-app.post("/friendship",async(req,res)=>{
-   const friend1Id=Number(req.body.friend1Id)
-   const friend2Id=Number(req.body.friend2Id)
-  // const relation= await prisma.friendship.findUnique({where:{room:friend1Id},include:{friend1:true,friend2:true}})
-  const relation= await prisma.friendship.findUnique({where:{friend1Id_friend2Id:{friend1Id,friend2Id}},include:{friend1:true,friend2:true}})
-  // const relation= await prisma.friendship.findUnique({where:{}}})
-  
-   if(relation) res.send(relation)
-   else res.send({})
-
-   
-})
- 
 app.get("/validate", async (req, res) => {
   try {
     if (req.headers.authorization) {
@@ -144,17 +147,16 @@ const io = new Server(4555, {
 
 const messages: Message[] = [];
 
-type Message={
- content:string,
- user:User & {friends: User[]}
-}
-
+type Message = {
+  content: string;
+  user: User & { friends: User[] };
+};
 
 //initializing the socket io connection
 io.on("connection", (socket) => {
   //for a new user joining the chat
   // const friend=await prisma.user.findUnique({where:{email:"ergi@email.com"}})
-  socket.emit("message",messages)
+  socket.emit("message", messages);
   socket.on("message", (message: Message) => {
     messages.push(message);
     socket.broadcast.emit("message", messages);
