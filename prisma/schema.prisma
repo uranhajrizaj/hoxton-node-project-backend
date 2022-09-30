@@ -28,6 +28,7 @@ model Friendship {
   friend2   User   @relation("friend2", fields: [friend2Id], references: [id])
   friend2Id Int
   status    String
+  room Int  @default(1) @unique
 
   @@id([friend1Id, friend2Id])
 }

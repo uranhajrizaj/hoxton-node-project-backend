@@ -32,12 +32,12 @@ async function getCurrentUser(token: string) {
     include: {
       following: {
         select: {
-          friend2: { select: { name: true, surname: true, image: true } },
+          friend2: { select: { name: true, surname: true, image: true,id:true } },
         },
       },
       followedby: {
         select: {
-          friend1: { select: { name: true, surname: true, image: true } },
+          friend1: { select: { name: true, surname: true, image: true,id:true } },
         },
       },
     },
@@ -80,14 +80,16 @@ app.post("/sign-in", async (req, res) => {
     include: {
       following: {
         select: {
-          friend2: { select: { name: true, surname: true, image: true } },
+          friend2: { select: { name: true, surname: true, image: true,id:true } },
         },
       },
       followedby: {
         select: {
-          friend1: { select: { name: true, surname: true, image: true } },
-        },
+          friend1: { select: { name: true, surname: true, image: true,id:true } },
+        }, 
       },
+    
+
     },
   });
   if (findUser && bcrypt.compareSync(req.body.password, findUser.password)) {
@@ -102,6 +104,20 @@ app.post("/sign-in", async (req, res) => {
   }
 });
 
+
+app.post("/friendship",async(req,res)=>{
+   const friend1Id=Number(req.body.friend1Id)
+   const friend2Id=Number(req.body.friend2Id)
+  // const relation= await prisma.friendship.findUnique({where:{room:friend1Id},include:{friend1:true,friend2:true}})
+  const relation= await prisma.friendship.findUnique({where:{friend1Id_friend2Id:{friend1Id,friend2Id}},include:{friend1:true,friend2:true}})
+  // const relation= await prisma.friendship.findUnique({where:{}}})
+  
+   if(relation) res.send(relation)
+   else res.send({})
+
+   
+})
+ 
 app.get("/validate", async (req, res) => {
   try {
     if (req.headers.authorization) {
@@ -132,9 +148,12 @@ type Message={
  content:string,
  user:User & {friends: User[]}
 }
+
+
 //initializing the socket io connection
 io.on("connection", (socket) => {
   //for a new user joining the chat
+  // const friend=await prisma.user.findUnique({where:{email:"ergi@email.com"}})
   socket.emit("message",messages)
   socket.on("message", (message: Message) => {
     messages.push(message);
